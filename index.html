@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WaveCast Live Audio Studio</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            studio: {
+              950: '#040711',
+              900: '#0a0f1d',
+              850: '#0f172a',
+              800: '#15203b',
+              700: '#1e2945',
+              600: '#33416b',
+              cyan: '#06b6d4',
+              neonRose: '#f43f5e',
+              emerald: '#10b981',
+              amber: '#f59e0b'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Menlo', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- PeerJS WebRTC Library -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- Canvas Confetti for live audience reactions -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <style>
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.1); opacity: 0.3; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .pulse-ring-active {
+      animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    /* Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0a0f1d; }
+    ::-webkit-scrollbar-thumb { background: #1e2945; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #33416b; }
+  </style>
+</head>
+
+<body class="bg-studio-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-cyan-500 selection:text-black antialiased">
+
+  <!-- Top Studio Header -->
+  <header class="border-b border-studio-700/60 bg-studio-900/90 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 py-3">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      
+      <!-- Brand & Mode Pill -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-600 to-rose-500 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+          <i data-lucide="radio" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
+              WaveCast <span class="text-cyan-400">Studio</span>
+            </h1>
+            <span class="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+              WebRTC Opus
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 hidden sm:block">Persistent P2P Live Audio Transmission & Audience Deck</p>
+        </div>
+      </div>
+
+      <!-- Network / Peer State & Controls -->
+      <div class="flex items-center gap-3">
+        <div id="peerStatusPill" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono bg-studio-850 border border-studio-700 text-slate-300">
+          <span id="peerDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="peerStatusLabel">Initializing Mesh...</span>
+        </div>
+
+        <button id="copyInviteHeaderBtn" onclick="copyStationInviteLink()" title="Copy Station Link" class="p-2 rounded-xl bg-studio-850 hover:bg-studio-700 border border-studio-700/80 text-slate-300 hover:text-white transition">
+          <i data-lucide="share-2" class="w-4 h-4 text-cyan-400"></i>
+        </button>
+
+        <button onclick="toggleQuickHelp(true)" class="p-2 rounded-xl bg-studio-850 hover:bg-studio-700 border border-studio-700/80 text-slate-300 hover:text-white transition" title="About & Instructions">
+          <i data-lucide="help-circle" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
+
+    <!-- Role Switcher & Fixed Room ID Configuration Panel -->
+    <section class="bg-studio-900 border border-studio-700/70 rounded-2xl p-4 sm:p-5 shadow-xl">
+      <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+        
+        <!-- Mode Tabs -->
+        <div class="inline-flex p-1 bg-studio-950 border border-studio-700/80 rounded-xl self-start sm:self-auto">
+          <button id="tabBroadcasterBtn" onclick="switchRole('broadcaster')" class="flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition bg-studio-700 text-white shadow-md">
+            <i data-lucide="mic" class="w-4 h-4 text-rose-400"></i>
+            <span>Broadcaster Studio</span>
+          </button>
+          <button id="tabListenerBtn" onclick="switchRole('listener')" class="flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition text-slate-400 hover:text-slate-200">
+            <i data-lucide="headphones" class="w-4 h-4 text-cyan-400"></i>
+            <span>Listener Deck</span>
+          </button>
+        </div>
+
+        <!-- Permanent Room ID Bar -->
+        <div class="flex-1 max-w-2xl bg-studio-950/80 border border-studio-700/80 rounded-xl p-2.5 sm:p-3 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div class="flex items-center gap-2 min-w-[130px]">
+            <i data-lucide="lock" class="w-4 h-4 text-cyan-400"></i>
+            <span class="text-xs font-mono font-medium text-slate-400">Fixed Room ID:</span>
+          </div>
+
+          <div class="relative flex-1">
+            <input id="staticRoomInput" type="text" spellcheck="false" placeholder="my-permanent-room" 
+                   class="w-full bg-studio-900 border border-studio-700 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-cyan-300 font-mono font-semibold focus:outline-none focus:border-cyan-500 transition">
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button id="saveAndReconnectBtn" onclick="applyAndPersistCustomRoomId()" class="px-3 py-1.5 bg-studio-700 hover:bg-studio-600 text-white font-medium rounded-lg text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="check" class="w-3.5 h-3.5 text-emerald-400"></i>
+              <span>Save & Connect</span>
+            </button>
+            <button onclick="copyStationInviteLink()" class="px-3 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 font-medium rounded-lg text-xs flex items-center gap-1.5 transition whitespace-nowrap">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span>Copy Link</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Test Synth Demo -->
+        <button onclick="toggleSyntheticLoopbackTest()" id="synthDemoBtn" class="px-3 py-2 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/70 text-indigo-300 rounded-xl text-xs font-mono flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="sparkles" class="w-4 h-4 text-indigo-400"></i>
+          <span id="synthDemoLabel">Soundcheck Synth</span>
+        </button>
+
+      </div>
+
+      <!-- ID Conflict Warning Banner (Hidden by default) -->
+      <div id="idConflictBanner" class="hidden mt-3 p-3 rounded-xl bg-amber-950/40 border border-amber-600/60 text-amber-300 text-xs flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="alert-triangle" class="w-4 h-4 flex-shrink-0 text-amber-400"></i>
+          <span>
+            <strong>Room ID is busy on the mesh.</strong> A previous session or tab may still be closing. Auto-retrying in <span id="conflictCountdown" class="font-mono font-bold text-white">3</span>s...
+          </span>
+        </div>
+        <button onclick="forceRetryCustomRoom()" class="px-2.5 py-1 bg-amber-700 hover:bg-amber-600 text-white font-medium rounded text-[11px] whitespace-nowrap">Retry Now</button>
+      </div>
+    </section>
+
+    <div id="broadcasterContainer" class="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
+      
+      <!-- Left: Studio Console & Visualizers (8 cols) -->
+      <div class="lg:col-span-8 flex flex-col gap-6">
+        
+        <!-- On-Air Control Center -->
+        <div class="bg-studio-900 border border-studio-700/80 rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+          
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="space-y-1">
+              <div class="flex items-center gap-3">
+                <span id="hostOnAirBadge" class="hidden items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                  <span class="w-2 h-2 rounded-full bg-rose-500 pulse-ring-active"></span>
+                  LIVE ON AIR
+                </span>
+                <span id="hostStandbyBadge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider bg-slate-800 text-slate-400 border border-slate-700">
+                  <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                  STANDBY
+                </span>
+                <h2 class="text-lg font-bold text-white tracking-tight">Audio Master Transmission</h2>
+              </div>
+              <p class="text-xs text-slate-400">Web Audio DSP node tree active at 48kHz with dynamics processing.</p>
+            </div>
+
+            <!-- Action Controls -->
+            <div class="flex items-center gap-2 flex-wrap">
+              <button id="toggleBroadcastActionBtn" onclick="toggleBroadcastStream()" class="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30 transition flex items-center gap-2">
+                <i data-lucide="radio" class="w-4 h-4"></i>
+                <span id="broadcastActionText">Start Broadcast</span>
+              </button>
+
+              <button id="toggleRecordBtn" onclick="toggleBroadcastRecording()" disabled class="px-3 py-2.5 rounded-xl text-xs font-semibold bg-studio-800 hover:bg-studio-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed border border-studio-700 transition flex items-center gap-1.5">
+                <i id="recIcon" data-lucide="disc" class="w-4 h-4 text-rose-400"></i>
+                <span id="recordActionText">Record Master</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Permanent Station Info Box -->
+          <div class="mt-4 p-3.5 rounded-xl bg-studio-950/70 border border-studio-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+                <i data-lucide="signal" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <span class="text-[10px] text-slate-400 uppercase font-mono block">Station Link (Permanent)</span>
+                <span id="displayStationUrl" class="font-mono font-medium text-cyan-300 break-all select-all">Loading...</span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <span id="broadcasterSampleRate" class="font-mono text-[11px] text-slate-400 bg-studio-900 px-2 py-1 rounded border border-studio-800">48.0 kHz • Opus</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-Time Spectrum Analyzer & Stereo Peak VU Gauges -->
+        <div class="bg-studio-900 border border-studio-700/80 rounded-2xl p-5 shadow-xl flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <i data-lucide="bar-chart-2" class="w-4 h-4 text-cyan-400"></i>
+              <h3 class="text-sm font-semibold text-slate-200">High-Resolution FFT Spectrum & VU Meters</h3>
+            </div>
+            <div class="flex items-center gap-3 font-mono text-xs text-slate-400">
+              <span id="broadcasterDbFsLabel">-∞ dBFS</span>
+              <span class="w-1 h-1 rounded-full bg-slate-600"></span>
+              <span id="broadcasterPeakLabel">PEAK: -∞ dB</span>
+            </div>
+          </div>
+
+          <!-- Visualizer & Overlay Meter Canvas -->
+          <div class="relative bg-studio-950 rounded-xl overflow-hidden border border-studio-800 h-48 sm:h-56">
+            <canvas id="hostAudioCanvas" class="w-full h-full block"></canvas>
+            
+            <!-- Stereo Horizontal VU Meters -->
+            <div class="absolute bottom-2.5 left-4 right-4 flex flex-col gap-1.5 pointer-events-none opacity-90">
+              <div class="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                <span class="w-3 text-right">L</span>
+                <div class="flex-1 bg-studio-900/90 h-2 rounded-full overflow-hidden flex border border-studio-700/50">
+                  <div id="hostVuLeft" class="bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 w-0 h-full transition-all duration-75"></div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                <span class="w-3 text-right">R</span>
+                <div class="flex-1 bg-studio-900/90 h-2 rounded-full overflow-hidden flex border border-studio-700/50">
+                  <div id="hostVuRight" class="bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 w-0 h-full transition-all duration-75"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- DSP Processing & Mic Controls -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+            
+            <!-- Audio Input Device -->
+            <div class="flex flex-col gap-1.5 sm:col-span-2">
+              <label class="text-xs font-medium text-slate-400 flex items-center justify-between">
+                <span>Microphone Input Source</span>
+                <button onclick="refreshAudioDevices()" class="text-[10px] text-cyan-400 hover:underline">Refresh Devices</button>
+              </label>
+              <select id="audioSourceSelect" class="bg-studio-950 border border-studio-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                <option value="">Default Microphone</option>
+              </select>
+            </div>
+
+            <!-- Gain Slider -->
+            <div class="flex flex-col gap-1.5">
+              <div class="flex justify-between items-center text-xs">
+                <span class="text-slate-400 font-medium">Preamp Gain</span>
+                <span id="gainValueText" class="font-mono text-cyan-400 font-semibold">1.0x</span>
+              </div>
+              <input id="micGainInput" type="range" min="0" max="3" step="0.05" value="1" oninput="handleGainChange(this.value)" class="accent-cyan-400 w-full h-1.5 bg-studio-800 rounded-lg appearance-none cursor-pointer mt-2">
+            </div>
+
+            <!-- Mute Button -->
+            <div class="flex flex-col justify-end">
+              <button id="micMuteToggleBtn" onclick="toggleMicMute()" class="w-full py-2 px-3 rounded-xl text-xs font-semibold bg-studio-800 hover:bg-studio-700 text-slate-200 border border-studio-700 flex items-center justify-center gap-2 transition">
+                <i id="muteIcon" data-lucide="mic" class="w-4 h-4 text-emerald-400"></i>
+                <span id="muteLabel">Mic Live</span>
+              </button>
+            </div>
+
+          </div>
+
+          <!-- DSP Processing Checkboxes -->
+          <div class="flex flex-wrap items-center gap-4 pt-3 border-t border-studio-800 text-xs text-slate-400">
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="echoCancelCheck" checked onchange="handleAudioConstraintChange()" class="rounded bg-studio-950 border-studio-700 text-cyan-500 focus:ring-0">
+              <span>Echo Cancellation</span>
+            </label>
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="noiseSuppressCheck" checked onchange="handleAudioConstraintChange()" class="rounded bg-studio-950 border-studio-700 text-cyan-500 focus:ring-0">
+              <span>Noise Suppression</span>
+            </label>
+            <label class="inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="limiterCheck" checked onchange="toggleDynamicsCompressor(this.checked)" class="rounded bg-studio-950 border-studio-700 text-cyan-500 focus:ring-0">
+              <span>Audio Limiter / Compressor</span>
+            </label>
+          </div>
+
+        </div>
+
+        <!-- Audience Listener Roster -->
+        <div class="bg-studio-900 border border-studio-700/80 rounded-2xl p-5 shadow-xl">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="users" class="w-4 h-4 text-emerald-400"></i>
+              <h3 class="text-sm font-semibold text-slate-200">Connected Audience Mesh</h3>
+              <span id="hostAudienceBadge" class="ml-2 px-2.5 py-0.5 text-xs font-mono font-bold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">0 Listeners</span>
+            </div>
+            <button onclick="pingAllListeners()" class="text-xs text-slate-400 hover:text-cyan-400 flex items-center gap-1.5">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Ping RTT</span>
+            </button>
+          </div>
+
+          <div id="listenerRosterContainer" class="divide-y divide-studio-800 max-h-40 overflow-y-auto pr-1">
+            <div id="noListenersPlaceholder" class="py-6 text-center text-xs text-slate-500">
+              No audience members currently connected. Share your permanent Station link to invite listeners.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right: Live Chat & Reactions (4 cols) -->
+      <div class="lg:col-span-4 flex flex-col gap-6">
+        
+        <!-- Live Chat Panel -->
+        <div class="bg-studio-900 border border-studio-700/80 rounded-2xl flex flex-col h-[560px] shadow-xl overflow-hidden">
+          <div class="p-4 border-b border-studio-800 flex items-center justify-between bg-studio-900/90">
+            <div class="flex items-center gap-2">
+              <i data-lucide="message-square" class="w-4 h-4 text-indigo-400"></i>
+              <span class="text-sm font-semibold text-white">Broadcast Stage Chat</span>
+            </div>
+            <span class="text-[11px] font-mono text-cyan-400">DataChannel</span>
+          </div>
+
+          <!-- Quick Reactions Bar -->
+          <div class="px-4 py-2 bg-studio-950/60 border-b border-studio-800 flex items-center justify-around">
+            <button onclick="triggerQuickReaction('👏')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Applause">👏</button>
+            <button onclick="triggerQuickReaction('🔥')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Fire">🔥</button>
+            <button onclick="triggerQuickReaction('❤️')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Heart">❤️</button>
+            <button onclick="triggerQuickReaction('🎉')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Party">🎉</button>
+            <button onclick="triggerQuickReaction('⚡')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Energy">⚡</button>
+          </div>
+
+          <!-- Chat History -->
+          <div id="hostChatContainer" class="flex-1 p-4 overflow-y-auto space-y-3 font-sans text-xs">
+            <div class="p-2.5 rounded-xl bg-studio-950/70 border border-studio-800 text-slate-400 text-center">
+              Station initialized. Live text & reactions from listeners will appear here over WebRTC data channels.
+            </div>
+          </div>
+
+          <!-- Chat Input -->
+          <form onsubmit="handleSendChatMessage(event, 'broadcaster')" class="p-3 border-t border-studio-800 bg-studio-900/90 flex gap-2">
+            <input id="broadcasterChatInput" type="text" placeholder="Type a message as host..." class="flex-1 bg-studio-950 border border-studio-700 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500">
+            <button type="submit" class="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center">
+              <i data-lucide="send" class="w-3.5 h-3.5"></i>
+            </button>
+          </form>
+        </div>
+
+        <!-- Recording Download Drawer (Appears when recording is created) -->
+        <div id="recordingResultCard" class="hidden bg-emerald-950/40 border border-emerald-700/60 rounded-2xl p-4 flex flex-col gap-2">
+          <div class="flex items-center justify-between text-xs font-bold text-emerald-300">
+            <span class="flex items-center gap-1.5"><i data-lucide="check-circle" class="w-4 h-4"></i> Broadcast Captured</span>
+            <span id="recordingTimerBadge" class="font-mono text-emerald-400">00:00</span>
+          </div>
+          <audio id="recordingPlaybackEl" controls class="w-full h-8 mt-1"></audio>
+          <a id="downloadRecordingAnchor" class="mt-1 block text-center py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs transition">
+            Download Stream Recording (.webm)
+          </a>
+        </div>
+
+      </div>
+
+    </div>
+
+    <div id="listenerContainer" class="hidden grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
+      
+      <!-- Left: Listener Player & Visualizer (8 cols) -->
+      <div class="lg:col-span-8 flex flex-col gap-6">
+        
+        <!-- Tuner Join Box -->
+        <div class="bg-studio-900 border border-studio-700/80 rounded-2xl p-5 sm:p-6 shadow-xl">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                <i data-lucide="headphones" class="w-5 h-5 text-cyan-400"></i>
+                Tune In to Live Station
+              </h2>
+              <p class="text-xs text-slate-400">Listen in real time with high fidelity stereo audio and interactive feedback.</p>
+            </div>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <div class="relative flex-1">
+              <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 font-mono text-xs">
+                #
+              </div>
+              <input id="listenerStationInput" type="text" placeholder="e.g. my-permanent-room" 
+                     class="w-full pl-8 pr-3 py-2.5 bg-studio-950 border border-studio-700 rounded-xl text-sm font-mono text-cyan-300 placeholder-slate-500 focus:outline-none focus:border-cyan-500">
+            </div>
+
+            <button id="listenerConnectBtn" onclick="connectListenerToStation()" class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/20">
+              <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+              <span id="listenerConnectBtnLabel">Tune In</span>
+            </button>
+            <button id="listenerDisconnectBtn" onclick="disconnectListenerFromStation()" class="hidden px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs sm:text-sm transition items-center justify-center gap-1.5">
+              <i data-lucide="square" class="w-3.5 h-3.5 fill-current"></i>
+              <span>Leave</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Listener Audio Spectrum & Receiver Deck -->
+        <div class="bg-studio-900 border border-studio-700/80 rounded-2xl p-6 shadow-xl flex flex-col gap-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <span id="listenerPillStatus" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono uppercase bg-slate-800 text-slate-400 border border-studio-700">
+                  <span class="w-2 h-2 rounded-full bg-slate-500"></span> STANDBY
+                </span>
+                <h3 id="listenerStationHeading" class="text-base font-bold text-white">Not Connected</h3>
+              </div>
+              <p id="listenerStationSubtext" class="text-xs text-slate-400 mt-0.5 font-mono">Connect to a live Room ID above to begin streaming.</p>
+            </div>
+
+            <!-- Volume & Master Play Controls -->
+            <div class="flex items-center gap-3 bg-studio-950 px-4 py-2 rounded-xl border border-studio-800">
+              <button id="listenerPlayPauseToggleBtn" onclick="toggleListenerPlaybackMute()" class="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition">
+                <i id="listenerVolIcon" data-lucide="volume-2" class="w-4 h-4"></i>
+              </button>
+              <div class="flex items-center gap-2">
+                <input id="listenerVolumeSlider" type="range" min="0" max="1" step="0.05" value="0.85" oninput="adjustListenerVolume(this.value)" class="accent-cyan-400 w-28 h-1.5 bg-studio-800 rounded-lg appearance-none cursor-pointer">
+              </div>
+            </div>
+          </div>
+
+          <!-- Listener FFT Audio Canvas -->
+          <div class="relative bg-studio-950 rounded-xl overflow-hidden border border-studio-800 h-52 flex items-center justify-center">
+            <canvas id="listenerAudioCanvas" class="w-full h-full block"></canvas>
+
+            <!-- Autoplay Unlock Tap Overlay -->
+            <div id="listenerAutoplayOverlay" class="hidden absolute inset-0 bg-studio-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center cursor-pointer" onclick="unlockListenerAutoplayAudio()">
+              <div class="w-14 h-14 rounded-full bg-cyan-500 text-white flex items-center justify-center mb-3 shadow-lg shadow-cyan-500/40 animate-bounce">
+                <i data-lucide="volume-2" class="w-7 h-7"></i>
+              </div>
+              <p class="text-sm font-bold text-white">Broadcast Stream Ready</p>
+              <p class="text-xs text-slate-400 max-w-sm mt-1">Tap anywhere here to activate live audio playback.</p>
+            </div>
+          </div>
+
+          <!-- Listener Telemetry Badges -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono">
+            <div class="p-3 bg-studio-950/70 rounded-xl border border-studio-800">
+              <span class="text-slate-500 text-[10px] block font-sans">STREAM LATENCY</span>
+              <span id="statLatency" class="text-cyan-400 font-bold">~ -- ms</span>
+            </div>
+            <div class="p-3 bg-studio-950/70 rounded-xl border border-studio-800">
+              <span class="text-slate-500 text-[10px] block font-sans">CODEC</span>
+              <span class="text-slate-200 font-bold">Opus / 48kHz</span>
+            </div>
+            <div class="p-3 bg-studio-950/70 rounded-xl border border-studio-800">
+              <span class="text-slate-500 text-[10px] block font-sans">ICE STATE</span>
+              <span id="statIce" class="text-slate-300 font-bold">New</span>
+            </div>
+            <div class="p-3 bg-studio-950/70 rounded-xl border border-studio-800">
+              <span class="text-slate-500 text-[10px] block font-sans">AUDIO CHANNELS</span>
+              <span class="text-emerald-400 font-bold">Stereo (2ch)</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Right: Audience Chat & Interaction (4 cols) -->
+      <div class="lg:col-span-4 flex flex-col gap-6">
+        <div class="bg-studio-900 border border-studio-700/80 rounded-2xl flex flex-col h-[520px] shadow-xl overflow-hidden">
+          <div class="p-4 border-b border-studio-800 flex items-center justify-between bg-studio-900/90">
+            <div class="flex items-center gap-2">
+              <i data-lucide="message-square" class="w-4 h-4 text-cyan-400"></i>
+              <span class="text-sm font-semibold text-white">Live Audience Chat</span>
+            </div>
+            <span class="text-[11px] font-mono text-cyan-400">P2P Stream</span>
+          </div>
+
+          <!-- Listener Quick Reactions -->
+          <div class="px-4 py-2 bg-studio-950/60 border-b border-studio-800 flex items-center justify-around">
+            <button onclick="triggerQuickReaction('👏')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Applause">👏</button>
+            <button onclick="triggerQuickReaction('🔥')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Fire">🔥</button>
+            <button onclick="triggerQuickReaction('❤️')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Heart">❤️</button>
+            <button onclick="triggerQuickReaction('🎉')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Party">🎉</button>
+            <button onclick="triggerQuickReaction('⚡')" class="p-2 hover:bg-studio-800 rounded-lg text-lg transition transform active:scale-90" title="Energy">⚡</button>
+          </div>
+
+          <!-- Listener Chat Messages Container -->
+          <div id="listenerChatContainer" class="flex-1 p-4 overflow-y-auto space-y-3 font-sans text-xs">
+            <div class="p-2.5 rounded-xl bg-studio-950/70 border border-studio-800 text-slate-400 text-center">
+              Connect to the station above to engage in live conversations and reactions.
+            </div>
+          </div>
+
+          <!-- Listener Chat Form -->
+          <form onsubmit="handleSendChatMessage(event, 'listener')" class="p-3 border-t border-studio-800 bg-studio-900/90 flex gap-2">
+            <input id="listenerChatInput" type="text" placeholder="Type a message as listener..." disabled 
+                   class="flex-1 bg-studio-950 border border-studio-700 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 disabled:opacity-50">
+            <button id="listenerChatSendBtn" type="submit" disabled class="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-semibold transition disabled:opacity-50">
+              <i data-lucide="send" class="w-3.5 h-3.5"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Help & Diagnostic Modal -->
+  <div id="helpModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-studio-900 border border-studio-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-studio-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i data-lucide="info" class="w-5 h-5 text-cyan-400"></i>
+          How WaveCast Works
+        </h3>
+        <button onclick="toggleQuickHelp(false)" class="p-1 text-slate-400 hover:text-white rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="text-xs text-slate-300 space-y-3 leading-relaxed">
+        <p><strong class="text-cyan-400">1. Permanent Fixed Room ID:</strong> Your room name is saved in your browser's <code class="bg-studio-800 px-1 py-0.5 rounded text-cyan-300">localStorage</code> and URL parameters. Whenever you reopen this page, your room name remains exactly the same.</p>
+        <p><strong class="text-rose-400">2. Sharing Station Links:</strong> Click <code class="bg-studio-800 px-1 py-0.5 rounded text-slate-200">Copy Link</code> to send a permanent URL like <code class="bg-studio-800 px-1 py-0.5 rounded text-cyan-300">?room=my-station</code>. Listeners who open the link automatically tune into your station.</p>
+        <p><strong class="text-amber-400">3. Rapid Refreshes & Mesh Conflict:</strong> If you refresh quickly while broadcasting, PeerJS cloud servers may take 2-4 seconds to release the old socket connection. WaveCast automatically detects <code class="bg-studio-800 px-1 py-0.5 rounded text-amber-300">unavailable-id</code> and retries automatically.</p>
+        <p><strong class="text-emerald-400">4. Single Device Soundcheck:</strong> Click <code class="bg-studio-800 px-1 py-0.5 rounded text-indigo-300">Soundcheck Synth</code> to test the audio visualizer and peer mesh without microphone echo.</p>
+      </div>
+
+      <div class="pt-2 flex justify-end">
+        <button onclick="toggleQuickHelp(false)" class="px-4 py-2 bg-studio-800 hover:bg-studio-700 text-white rounded-xl text-xs font-semibold">Understood</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden Remote Audio Playback Element -->
+  <audio id="remoteAudioSink" autoplay playsinline class="hidden"></audio>
+
+  <script>
+    /* Application Constants & Storage Keys */
+    const STORAGE_KEY_ROOM_ID = 'wavecast_permanent_room_id';
+    const DEFAULT_STATIC_ROOM_ID = 'wavecast-main-station';
+
+    /* Global Runtime State */
+    const state = {
+      role: 'broadcaster', // 'broadcaster' | 'listener'
+      staticRoomId: '',
+      peer: null,
+      peerId: '',
+      isPeerReady: false,
+      reconnectRetryTimer: null,
+      retryCountdownInterval: null,
+
+      // Broadcaster audio state
+      isBroadcasting: false,
+      isMuted: false,
+      micStream: null,
+      audioCtx: null,
+      sourceNode: null,
+      gainNode: null,
+      compressorNode: null,
+      analyserNode: null,
+      broadcasterCanvasAnimId: null,
+
+      // Broadcaster recording
+      mediaRecorder: null,
+      recordedChunks: [],
+      recordingStartTime: null,
+      recordingTimerInterval: null,
+
+      // Connected listeners map: peerId -> { call, dataConn, rttMs }
+      audience: new Map(),
+
+      // Soundcheck synth
+      isSynthRunning: false,
+      synthOsc: null,
+      synthLfo: null,
+      synthGain: null,
+
+      // Listener Audio & WebRTC State
+      listenerCall: null,
+      listenerDataConn: null,
+      listenerAudioCtx: null,
+      listenerSourceNode: null,
+      listenerGainNode: null,
+      listenerAnalyser: null,
+      listenerCanvasAnimId: null,
+      listenerStream: null
+    };
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      lucide.createIcons();
+
+      // 1. Determine Static Room ID from URL query or localStorage
+      resolvePermanentRoomId();
+
+      // 2. Setup Device Inputs
+      await refreshAudioDevices();
+
+      // 3. Check for listener auto-tune URL param
+      checkUrlRouting();
+
+      // 4. Initialize PeerJS connection with the fixed ID
+      initPeerMesh();
+
+      // Setup window resize for Canvas responsive redraw
+      window.addEventListener('resize', () => {
+        handleVisualizerResize();
+      });
+    });
+
+    /**
+     * Resolves and binds the permanent Room ID across localStorage and URL
+     */
+    function resolvePermanentRoomId() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlRoom = urlParams.get('room');
+      const savedRoom = localStorage.getItem(STORAGE_KEY_ROOM_ID);
+
+      // Priority: URL Param -> LocalStorage -> Default String
+      const finalId = (urlRoom && urlRoom.trim()) || (savedRoom && savedRoom.trim()) || DEFAULT_STATIC_ROOM_ID;
+      state.staticRoomId = sanitizeRoomId(finalId);
+      localStorage.setItem(STORAGE_KEY_ROOM_ID, state.staticRoomId);
+
+      // Update input fields and labels
+      const inputEl = document.getElementById('staticRoomInput');
+      const listenerInputEl = document.getElementById('listenerStationInput');
+      if (inputEl) inputEl.value = state.staticRoomId;
+      if (listenerInputEl) listenerInputEl.value = state.staticRoomId;
+
+      updatePermanentStationDisplay();
+    }
+
+    function sanitizeRoomId(str) {
+      return str.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').slice(0, 48);
+    }
+
+    function updatePermanentStationDisplay() {
+      const displayEl = document.getElementById('displayStationUrl');
+      const baseUrl = window.location.origin + window.location.pathname;
+      const permUrl = `${baseUrl}?room=${state.staticRoomId}#listener`;
+      if (displayEl) {
+        displayEl.textContent = permUrl;
+      }
+    }
+
+    function initPeerMesh() {
+      // Clean up previous instance if reconnecting
+      if (state.peer) {
+        try {
+          state.peer.destroy();
+        } catch(e) {}
+      }
+
+      updatePeerStatusBadge('connecting', `Registering ${state.staticRoomId}...`);
+
+      const targetId = state.role === 'broadcaster' ? state.staticRoomId : `listener-${Math.random().toString(36).substring(2, 8)}`;
+
+      // Initialize PeerJS with public STUN configuration
+      state.peer = new Peer(targetId, {
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
+
+      state.peer.on('open', (id) => {
+        state.peerId = id;
+        state.isPeerReady = true;
+        hideConflictBanner();
+
+        if (state.role === 'broadcaster') {
+          updatePeerStatusBadge('online', `Station Online: ${id}`);
+          appendChatMessage('system', `Broadcast node successfully registered with permanent ID: "${id}"`, 'broadcaster');
+        } else {
+          updatePeerStatusBadge('online', `Listener Node Ready`);
+        }
+      });
+
+      // Handle Call connections (Listener calling Broadcaster)
+      state.peer.on('call', (incomingCall) => {
+        if (state.role === 'broadcaster') {
+          handleIncomingListenerCall(incomingCall);
+        } else {
+          // If in listener mode, incoming stream from host
+          incomingCall.answer();
+          incomingCall.on('stream', (remoteStream) => {
+            setupListenerRemoteAudio(remoteStream);
+          });
+        }
+      });
+
+      // Handle WebRTC Data Channels
+      state.peer.on('connection', (dataConn) => {
+        setupDataChannelEvents(dataConn);
+      });
+
+      // Robust Error Handling for 'unavailable-id'
+      state.peer.on('error', (err) => {
+        console.warn('PeerJS Mesh Event:', err.type, err);
+
+        if (err.type === 'unavailable-id') {
+          handleIdConflict(state.staticRoomId);
+        } else if (err.type === 'peer-unavailable') {
+          appendChatMessage('system', `Station "${state.staticRoomId}" is not online yet. Wait for broadcaster to go live.`, state.role);
+          updatePeerStatusBadge('error', 'Host station offline');
+        } else {
+          updatePeerStatusBadge('error', `Mesh: ${err.type}`);
+        }
+      });
+
+      state.peer.on('disconnected', () => {
+        updatePeerStatusBadge('error', 'Disconnected from broker');
+      });
+    }
+
+    /**
+     * Handles previous tab lingering or ID taken error with automatic countdown
+     */
+    function handleIdConflict(roomId) {
+      if (state.role !== 'broadcaster') return;
+
+      const banner = document.getElementById('idConflictBanner');
+      const countdownEl = document.getElementById('conflictCountdown');
+      banner.classList.remove('hidden');
+
+      let secondsLeft = 3;
+      countdownEl.textContent = secondsLeft;
+
+      clearInterval(state.retryCountdownInterval);
+      clearTimeout(state.reconnectRetryTimer);
+
+      state.retryCountdownInterval = setInterval(() => {
+        secondsLeft--;
+        if (countdownEl) countdownEl.textContent = secondsLeft;
+        if (secondsLeft <= 0) {
+          clearInterval(state.retryCountdownInterval);
+        }
+      }, 1000);
+
+      state.reconnectRetryTimer = setTimeout(() => {
+        console.log(`[WaveCast] Re-attempting to claim permanent ID "${roomId}"...`);
+        initPeerMesh();
+      }, 3200);
+    }
+
+    function hideConflictBanner() {
+      const banner = document.getElementById('idConflictBanner');
+      if (banner) banner.classList.add('hidden');
+      clearInterval(state.retryCountdownInterval);
+      clearTimeout(state.reconnectRetryTimer);
+    }
+
+    function forceRetryCustomRoom() {
+      hideConflictBanner();
+      initPeerMesh();
+    }
+
+    function applyAndPersistCustomRoomId() {
+      const input = document.getElementById('staticRoomInput');
+      const val = sanitizeRoomId(input.value.trim());
+
+      if (!val) {
+        appendChatMessage('system', 'Room ID cannot be empty.', state.role);
+        return;
+      }
+
+      state.staticRoomId = val;
+      localStorage.setItem(STORAGE_KEY_ROOM_ID, val);
+      input.value = val;
+
+      const listenerInput = document.getElementById('listenerStationInput');
+      if (listenerInput) listenerInput.value = val;
+
+      // Update URL query without full page reload
+      const newUrl = new URL(window.location);
+      newUrl.searchParams.set('room', val);
+      window.history.replaceState({}, '', newUrl);
+
+      updatePermanentStationDisplay();
+      appendChatMessage('system', `Station permanent ID updated to: "${val}". Reconnecting...`, state.role);
+
+      initPeerMesh();
+    }
+
+    async function startHostAudioPipeline() {
+      if (state.isSynthRunning) {
+        return createSynthesizerStream();
+      }
+
+      const deviceId = document.getElementById('audioSourceSelect').value;
+      const echoCancellation = document.getElementById('echoCancelCheck').checked;
+      const noiseSuppression = document.getElementById('noiseSuppressCheck').checked;
+
+      const constraints = {
+        audio: {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          echoCancellation,
+          noiseSuppression,
+          autoGainControl: true,
+          channelCount: 2,
+          sampleRate: 48000
+        },
+        video: false
+      };
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        state.micStream = stream;
+
+        // Initialize AudioContext
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!state.audioCtx) {
+          state.audioCtx = new AudioContext({ sampleRate: 48000 });
+        }
+        if (state.audioCtx.state === 'suspended') {
+          await state.audioCtx.resume();
+        }
+
+        // Web Audio Node Graph
+        state.sourceNode = state.audioCtx.createMediaStreamSource(stream);
+        state.gainNode = state.audioCtx.createGain();
+        state.gainNode.gain.value = parseFloat(document.getElementById('micGainInput').value);
+
+        // Dynamics Compressor / Limiter
+        state.compressorNode = state.audioCtx.createDynamicsCompressor();
+        state.compressorNode.threshold.setValueAtTime(-24, state.audioCtx.currentTime);
+        state.compressorNode.knee.setValueAtTime(30, state.audioCtx.currentTime);
+        state.compressorNode.ratio.setValueAtTime(12, state.audioCtx.currentTime);
+        state.compressorNode.attack.setValueAtTime(0.003, state.audioCtx.currentTime);
+        state.compressorNode.release.setValueAtTime(0.25, state.audioCtx.currentTime);
+
+        // FFT Analyser Node
+        state.analyserNode = state.audioCtx.createAnalyser();
+        state.analyserNode.fftSize = 256;
+        state.analyserNode.smoothingTimeConstant = 0.82;
+
+        // Connect graph: Source -> Gain -> Compressor -> Analyser
+        state.sourceNode.connect(state.gainNode);
+        state.gainNode.connect(state.compressorNode);
+        state.compressorNode.connect(state.analyserNode);
+
+        // Start Canvas Visualization
+        startCanvasVisualizer('hostAudioCanvas', state.analyserNode, true);
+
+        return stream;
+      } catch (err) {
+        console.error('Mic Error:', err);
+        appendChatMessage('system', `Microphone Error: ${err.message}. You can use Soundcheck Synth to test.`, 'broadcaster');
+        return null;
+      }
+    }
+
+    function createSynthesizerStream() {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!state.audioCtx) {
+        state.audioCtx = new AudioContext({ sampleRate: 48000 });
+      }
+      if (state.audioCtx.state === 'suspended') {
+        state.audioCtx.resume();
+      }
+
+      const dest = state.audioCtx.createMediaStreamDestination();
+      
+      // Melody / Bass synth oscillator
+      const osc = state.audioCtx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(110, state.audioCtx.currentTime); // A2
+
+      // Low pass filter
+      const filter = state.audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(750, state.audioCtx.currentTime);
+
+      // Pulse LFO
+      const lfo = state.audioCtx.createOscillator();
+      lfo.frequency.setValueAtTime(2.5, state.audioCtx.currentTime); // 2.5Hz beat
+      const lfoGain = state.audioCtx.createGain();
+      lfoGain.gain.setValueAtTime(350, state.audioCtx.currentTime);
+      lfo.connect(filter.frequency);
+
+      const gain = state.audioCtx.createGain();
+      gain.gain.setValueAtTime(0.28, state.audioCtx.currentTime);
+
+      osc.connect(filter);
+      filter.connect(gain);
+
+      state.analyserNode = state.audioCtx.createAnalyser();
+      state.analyserNode.fftSize = 256;
+
+      gain.connect(state.analyserNode);
+      gain.connect(dest);
+
+      osc.start();
+      lfo.start();
+
+      state.synthOsc = osc;
+      state.synthLfo = lfo;
+      state.synthGain = gain;
+      state.micStream = dest.stream;
+
+      startCanvasVisualizer('hostAudioCanvas', state.analyserNode, true);
+      return dest.stream;
+    }
+
+    function toggleSyntheticLoopbackTest() {
+      if (!state.isSynthRunning) {
+        state.isSynthRunning = true;
+        document.getElementById('synthDemoBtn').classList.add('bg-indigo-700', 'text-white');
+        document.getElementById('synthDemoLabel').textContent = 'Stop Synth';
+        appendChatMessage('system', 'Soundcheck synthesizer loopback activated.', 'broadcaster');
+        if (!state.isBroadcasting) {
+          toggleBroadcastStream();
+        }
+      } else {
+        stopSynth();
+      }
+    }
+
+    function stopSynth() {
+      state.isSynthRunning = false;
+      document.getElementById('synthDemoBtn').classList.remove('bg-indigo-700', 'text-white');
+      document.getElementById('synthDemoLabel').textContent = 'Soundcheck Synth';
+      if (state.synthOsc) {
+        try { state.synthOsc.stop(); } catch(e){}
+        state.synthOsc = null;
+      }
+      if (state.synthLfo) {
+        try { state.synthLfo.stop(); } catch(e){}
+        state.synthLfo = null;
+      }
+      appendChatMessage('system', 'Synthesizer test tone stopped.', 'broadcaster');
+    }
+
+    /* Canvas FFT Spectrum & Stereo VU Level Drawer */
+    function startCanvasVisualizer(canvasId, analyser, isHost = false) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const bufferLength = analyser.frequencyBinCount;
+      const freqData = new Uint8Array(bufferLength);
+      const timeData = new Uint8Array(bufferLength);
+
+      let peakLevelDb = -90;
+
+      function renderFrame() {
+        requestAnimationFrame(renderFrame);
+        analyser.getByteFrequencyData(freqData);
+        analyser.getByteTimeDomainData(timeData);
+
+        const w = canvas.parentElement.clientWidth || 600;
+        const h = canvas.parentElement.clientHeight || 200;
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+
+        ctx.fillStyle = '#070b15';
+        ctx.fillRect(0, 0, w, h);
+
+        // Grid lines
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#1e294544';
+        for (let x = 0; x < w; x += 50) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, h);
+          ctx.stroke();
+        }
+
+        // Spectrum bars
+        const barWidth = (w / bufferLength) * 2.2;
+        let x = 0;
+        let sumAmp = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+          const val = freqData[i];
+          sumAmp += val;
+          const barHeight = (val / 255) * (h - 32);
+
+          const grad = ctx.createLinearGradient(0, h, 0, 0);
+          if (isHost) {
+            grad.addColorStop(0, '#06b6d4');
+            grad.addColorStop(0.6, '#6366f1');
+            grad.addColorStop(1, '#f43f5e');
+          } else {
+            grad.addColorStop(0, '#10b981');
+            grad.addColorStop(0.7, '#06b6d4');
+            grad.addColorStop(1, '#3b82f6');
+          }
+
+          ctx.fillStyle = grad;
+          ctx.fillRect(x, h - barHeight, barWidth - 1.5, barHeight);
+          x += barWidth;
+        }
+
+        // Oscilloscope Waveform overlay
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = isHost ? '#f43f5e99' : '#06b6d4aa';
+        ctx.beginPath();
+        const sliceWidth = w / bufferLength;
+        let wx = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const v = timeData[i] / 128.0;
+          const wy = (v * h) / 2;
+          if (i === 0) ctx.moveTo(wx, wy);
+          else ctx.lineTo(wx, wy);
+          wx += sliceWidth;
+        }
+        ctx.stroke();
+
+        // Calculate Average Volume & Peak VU Meter
+        const avg = sumAmp / bufferLength;
+        const vuPercent = Math.min(100, Math.round((avg / 130) * 100));
+        const currentDb = avg > 0 ? (20 * Math.log10(avg / 255)).toFixed(1) : -90;
+
+        if (parseFloat(currentDb) > peakLevelDb) {
+          peakLevelDb = parseFloat(currentDb);
+        } else {
+          peakLevelDb = Math.max(-90, peakLevelDb - 0.15); // Decay
+        }
+
+        if (isHost) {
+          const vuL = document.getElementById('hostVuLeft');
+          const vuR = document.getElementById('hostVuRight');
+          if (vuL && vuR) {
+            vuL.style.width = `${vuPercent}%`;
+            vuR.style.width = `${Math.max(0, vuPercent - Math.random() * 4)}%`;
+          }
+          const dbLabel = document.getElementById('broadcasterDbFsLabel');
+          const peakLabel = document.getElementById('broadcasterPeakLabel');
+          if (dbLabel) dbLabel.textContent = `${currentDb} dBFS`;
+          if (peakLabel) peakLabel.textContent = `PEAK: ${peakLevelDb.toFixed(1)} dB`;
+        }
+      }
+
+      renderFrame();
+    }
+
+    function handleVisualizerResize() {
+      // Dynamic scaling handled inside renderFrame loop
+    }
+
+    async function toggleBroadcastStream() {
+      if (!state.isBroadcasting) {
+        const stream = await startHostAudioPipeline();
+        if (!stream) return;
+
+        state.isBroadcasting = true;
+        document.getElementById('broadcastActionText').textContent = 'Stop Broadcast';
+        document.getElementById('toggleBroadcastActionBtn').classList.replace('bg-rose-600', 'bg-slate-700');
+        document.getElementById('hostOnAirBadge').classList.replace('hidden', 'inline-flex');
+        document.getElementById('hostStandbyBadge').classList.add('hidden');
+        document.getElementById('toggleRecordBtn').disabled = false;
+
+        broadcastMeshMessage({
+          type: 'station-live',
+          status: 'live',
+          stationId: state.staticRoomId
+        });
+
+        appendChatMessage('system', `You are LIVE on station "${state.staticRoomId}". Ready for audience connections!`, 'broadcaster');
+      } else {
+        stopBroadcasting();
+      }
+    }
+
+    function stopBroadcasting() {
+      state.isBroadcasting = false;
+
+      if (state.isRecording) {
+        toggleBroadcastRecording();
+      }
+      if (state.isSynthRunning) {
+        stopSynth();
+      }
+      if (state.micStream) {
+        state.micStream.getTracks().forEach(t => t.stop());
+        state.micStream = null;
+      }
+
+      document.getElementById('broadcastActionText').textContent = 'Start Broadcast';
+      document.getElementById('toggleBroadcastActionBtn').classList.replace('bg-slate-700', 'bg-rose-600');
+      document.getElementById('hostOnAirBadge').classList.replace('inline-flex', 'hidden');
+      document.getElementById('hostStandbyBadge').classList.remove('hidden');
+      document.getElementById('toggleRecordBtn').disabled = true;
+
+      broadcastMeshMessage({
+        type: 'station-live',
+        status: 'offline',
+        stationId: state.staticRoomId
+      });
+
+      appendChatMessage('system', 'Broadcast ended. Station transmission has ceased.', 'broadcaster');
+    }
+
+    function handleIncomingListenerCall(call) {
+      const listenerPeerId = call.peer;
+      
+      // If host is live, answer with the active mic stream
+      if (state.micStream) {
+        call.answer(state.micStream);
+      } else {
+        call.answer(); // Answer with inactive track
+      }
+
+      const listenerEntry = {
+        call: call,
+        dataConn: null,
+        rttMs: 'Calculating...'
+      };
+      state.audience.set(listenerPeerId, listenerEntry);
+      updateAudienceRosterUI();
+
+      call.on('close', () => {
+        state.audience.delete(listenerPeerId);
+        updateAudienceRosterUI();
+      });
+
+      call.on('error', (e) => {
+        console.warn('Call error from listener:', e);
+        state.audience.delete(listenerPeerId);
+        updateAudienceRosterUI();
+      });
+    }
+
+    function setupDataChannelEvents(conn) {
+      const peerId = conn.peer;
+
+      conn.on('open', () => {
+        if (state.audience.has(peerId)) {
+          state.audience.get(peerId).dataConn = conn;
+        }
+
+        // Notify client of status
+        conn.send({
+          type: 'station-live',
+          status: state.isBroadcasting ? 'live' : 'standby',
+          stationId: state.staticRoomId
+        });
+      });
+
+      conn.on('data', (data) => {
+        handleIncomingDataPayload(data, conn);
+      });
+
+      conn.on('close', () => {
+        if (state.audience.has(peerId)) {
+          state.audience.delete(peerId);
+          updateAudienceRosterUI();
+        }
+      });
+    }
+
+    function handleIncomingDataPayload(data, conn) {
+      if (!data) return;
+
+      switch (data.type) {
+        case 'chat':
+          appendChatMessage(data.sender, data.text, state.role);
+          if (state.role === 'broadcaster') {
+            broadcastMeshMessage(data, conn.peer);
+          }
+          break;
+
+        case 'reaction':
+          triggerBurstAnimation(data.emoji);
+          appendChatMessage(data.sender, `reacted ${data.emoji}`, state.role, true);
+          if (state.role === 'broadcaster') {
+            broadcastMeshMessage(data, conn.peer);
+          }
+          break;
+
+        case 'ping':
+          conn.send({ type: 'pong', timestamp: data.timestamp });
+          break;
+
+        case 'pong':
+          const roundTrip = Date.now() - data.timestamp;
+          if (state.audience.has(conn.peer)) {
+            state.audience.get(conn.peer).rttMs = `${roundTrip} ms`;
+            updateAudienceRosterUI();
+          }
+          const latencyStat = document.getElementById('statLatency');
+          if (latencyStat) latencyStat.textContent = `~ ${Math.round(roundTrip / 2)} ms`;
+          break;
+
+        case 'station-live':
+          if (state.role === 'listener') {
+            setListenerStatusBadge(data.status);
+          }
+          break;
+      }
+    }
+
+    function broadcastMeshMessage(payload, excludeId = null) {
+      state.audience.forEach((client, peerId) => {
+        if (peerId !== excludeId && client.dataConn && client.dataConn.open) {
+          client.dataConn.send(payload);
+        }
+      });
+    }
+
+    function pingAllListeners() {
+      state.audience.forEach(client => {
+        if (client.dataConn && client.dataConn.open) {
+          client.dataConn.send({ type: 'ping', timestamp: Date.now() });
+        }
+      });
+    }
+
+    function updateAudienceRosterUI() {
+      const container = document.getElementById('listenerRosterContainer');
+      const badge = document.getElementById('hostAudienceBadge');
+      const count = state.audience.size;
+
+      badge.textContent = `${count} ${count === 1 ? 'Listener' : 'Listeners'}`;
+
+      if (count === 0) {
+        container.innerHTML = `
+          <div id="noListenersPlaceholder" class="py-6 text-center text-xs text-slate-500">
+            No audience members currently connected. Share your permanent Station link to invite listeners.
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = '';
+      state.audience.forEach((client, peerId) => {
+        const item = document.createElement('div');
+        item.className = 'py-2 flex items-center justify-between text-xs font-mono';
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="text-slate-200">${peerId.substring(0, 14)}...</span>
+            <span class="text-[10px] text-cyan-400 bg-studio-950 px-1.5 py-0.5 rounded border border-studio-800">${client.rttMs}</span>
+          </div>
+          <button onclick="disconnectSpecificAudience('${peerId}')" class="text-slate-500 hover:text-rose-400 p-1" title="Disconnect Peer">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+          </button>
+        `;
+        container.appendChild(item);
+      });
+      lucide.createIcons();
+    }
+
+    function disconnectSpecificAudience(peerId) {
+      if (state.audience.has(peerId)) {
+        const p = state.audience.get(peerId);
+        if (p.call) p.call.close();
+        if (p.dataConn) p.dataConn.close();
+        state.audience.delete(peerId);
+        updateAudienceRosterUI();
+      }
+    }
+
+    function handleGainChange(val) {
+      if (state.gainNode && state.audioCtx) {
+        state.gainNode.gain.setValueAtTime(parseFloat(val), state.audioCtx.currentTime);
+      }
+      document.getElementById('gainValueText').textContent = `${parseFloat(val).toFixed(2)}x`;
+    }
+
+    function toggleMicMute() {
+      if (!state.micStream) return;
+      state.isMuted = !state.isMuted;
+      state.micStream.getAudioTracks().forEach(t => t.enabled = !state.isMuted);
+
+      const icon = document.getElementById('muteIcon');
+      const label = document.getElementById('muteLabel');
+      const btn = document.getElementById('micMuteToggleBtn');
+
+      if (state.isMuted) {
+        icon.setAttribute('data-lucide', 'mic-off');
+        icon.className = 'w-4 h-4 text-rose-400';
+        label.textContent = 'Muted';
+        btn.classList.add('bg-rose-950/40', 'border-rose-800');
+      } else {
+        icon.setAttribute('data-lucide', 'mic');
+        icon.className = 'w-4 h-4 text-emerald-400';
+        label.textContent = 'Mic Live';
+        btn.classList.remove('bg-rose-950/40', 'border-rose-800');
+      }
+      lucide.createIcons();
+    }
+
+    function toggleDynamicsCompressor(enable) {
+      if (!state.sourceNode || !state.gainNode || !state.analyserNode) return;
+      if (enable) {
+        state.gainNode.disconnect();
+        state.gainNode.connect(state.compressorNode);
+        state.compressorNode.connect(state.analyserNode);
+      } else {
+        state.gainNode.disconnect();
+        state.gainNode.connect(state.analyserNode);
+      }
+    }
+
+    async function handleAudioConstraintChange() {
+      if (state.isBroadcasting && !state.isSynthRunning) {
+        if (state.micStream) state.micStream.getTracks().forEach(t => t.stop());
+        const newStream = await startHostAudioPipeline();
+        if (newStream) {
+          const newTrack = newStream.getAudioTracks()[0];
+          state.audience.forEach(({ call }) => {
+            const senders = call.peerConnection.getSenders();
+            const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+            if (audioSender) audioSender.replaceTrack(newTrack);
+          });
+        }
+      }
+    }
+
+    async function refreshAudioDevices() {
+      try {
+        const select = document.getElementById('audioSourceSelect');
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+
+        select.innerHTML = '<option value="">Default Microphone</option>';
+        audioInputs.forEach((dev, idx) => {
+          const opt = document.createElement('option');
+          opt.value = dev.deviceId;
+          opt.textContent = dev.label || `Microphone ${idx + 1}`;
+          select.appendChild(opt);
+        });
+      } catch (err) {
+        console.warn('Enumerate audio inputs note:', err);
+      }
+    }
+
+    function toggleBroadcastRecording() {
+      if (!state.isRecording) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+    }
+
+    function startRecording() {
+      if (!state.micStream) return;
+      state.recordedChunks = [];
+
+      try {
+        state.mediaRecorder = new MediaRecorder(state.micStream, { mimeType: 'audio/webm;codecs=opus' });
+      } catch (e) {
+        state.mediaRecorder = new MediaRecorder(state.micStream);
+      }
+
+      state.mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) state.recordedChunks.push(e.data);
+      };
+
+      state.mediaRecorder.onstop = finalizeRecordedAudio;
+      state.mediaRecorder.start(1000);
+      state.isRecording = true;
+      state.recordingStartTime = Date.now();
+
+      document.getElementById('recordActionText').textContent = 'Recording...';
+      document.getElementById('recIcon').classList.add('animate-pulse');
+      document.getElementById('toggleRecordBtn').classList.add('bg-rose-950/60', 'border-rose-600');
+
+      state.recordingTimerInterval = setInterval(() => {
+        const diff = Math.floor((Date.now() - state.recordingStartTime) / 1000);
+        const mins = String(Math.floor(diff / 60)).padStart(2, '0');
+        const secs = String(diff % 60).padStart(2, '0');
+        document.getElementById('recordActionText').textContent = `Rec (${mins}:${secs})`;
+      }, 1000);
+    }
+
+    function stopRecording() {
+      if (!state.mediaRecorder) return;
+      state.mediaRecorder.stop();
+      state.isRecording = false;
+      clearInterval(state.recordingTimerInterval);
+
+      document.getElementById('recordActionText').textContent = 'Record Master';
+      document.getElementById('recIcon').classList.remove('animate-pulse');
+      document.getElementById('toggleRecordBtn').classList.remove('bg-rose-950/60', 'border-rose-600');
+    }
+
+    function finalizeRecordedAudio() {
+      const blob = new Blob(state.recordedChunks, { type: 'audio/webm' });
+      const audioUrl = URL.createObjectURL(blob);
+      const audioEl = document.getElementById('recordingPlaybackEl');
+      const downloadA = document.getElementById('downloadRecordingAnchor');
+      const card = document.getElementById('recordingResultCard');
+
+      audioEl.src = audioUrl;
+      downloadA.href = audioUrl;
+      downloadA.download = `wavecast-${state.staticRoomId}-${Date.now()}.webm`;
+
+      const diff = Math.floor((Date.now() - state.recordingStartTime) / 1000);
+      const mins = String(Math.floor(diff / 60)).padStart(2, '0');
+      const secs = String(diff % 60).padStart(2, '0');
+      document.getElementById('recordingTimerBadge').textContent = `${mins}:${secs}`;
+
+      card.classList.remove('hidden');
+      appendChatMessage('system', 'Audio recording processed and ready to download.', 'broadcaster');
+    }
+
+    async function connectListenerToStation() {
+      const input = document.getElementById('listenerStationInput');
+      const targetRoom = sanitizeRoomId(input.value.trim() || state.staticRoomId);
+
+      if (!targetRoom) {
+        appendChatMessage('system', 'Please enter a valid Station Room ID.', 'listener');
+        return;
+      }
+
+      state.staticRoomId = targetRoom;
+      document.getElementById('listenerConnectBtnLabel').textContent = 'Tuning In...';
+      document.getElementById('listenerConnectBtn').disabled = true;
+
+      // 1. Establish Data Channel connection
+      const dataConn = state.peer.connect(targetRoom, { reliable: true });
+      state.listenerDataConn = dataConn;
+
+      dataConn.on('open', () => {
+        setListenerStatusBadge('connecting');
+        document.getElementById('listenerStationHeading').textContent = `Tuned into: ${targetRoom}`;
+        document.getElementById('listenerStationSubtext').textContent = 'WebRTC low-latency handshake established.';
+
+        // 2. Request Call connection
+        const dummyStream = makeSilenceMediaStream();
+        const call = state.peer.call(targetRoom, dummyStream);
+        state.listenerCall = call;
+
+        call.on('stream', (remoteStream) => {
+          setupListenerRemoteAudio(remoteStream);
+        });
+
+        call.on('close', () => {
+          disconnectListenerFromStation();
+          appendChatMessage('system', 'Host closed the transmission.', 'listener');
+        });
+
+        // Ping telemetry interval
+        setInterval(() => {
+          if (dataConn.open) {
+            dataConn.send({ type: 'ping', timestamp: Date.now() });
+          }
+        }, 3000);
+      });
+
+      dataConn.on('data', (data) => {
+        handleIncomingDataPayload(data, dataConn);
+      });
+
+      dataConn.on('error', (err) => {
+        console.error('Data channel error:', err);
+        disconnectListenerFromStation();
+        appendChatMessage('system', `Unable to connect: ${err.message}`, 'listener');
+      });
+    }
+
+    function setupListenerRemoteAudio(stream) {
+      state.listenerStream = stream;
+      const audioEl = document.getElementById('remoteAudioSink');
+      audioEl.srcObject = stream;
+
+      // Monitor ICE state
+      if (state.listenerCall && state.listenerCall.peerConnection) {
+        const pc = state.listenerCall.peerConnection;
+        document.getElementById('statIce').textContent = pc.iceConnectionState;
+        pc.oniceconnectionstatechange = () => {
+          document.getElementById('statIce').textContent = pc.iceConnectionState;
+        };
+      }
+
+      // Web Audio Analysis for Listener
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        state.listenerAudioCtx = new AudioContext({ sampleRate: 48000 });
+        state.listenerSourceNode = state.listenerAudioCtx.createMediaStreamSource(stream);
+
+        state.listenerGainNode = state.listenerAudioCtx.createGain();
+        state.listenerGainNode.gain.value = parseFloat(document.getElementById('listenerVolumeSlider').value);
+
+        state.listenerAnalyser = state.listenerAudioCtx.createAnalyser();
+        state.listenerAnalyser.fftSize = 256;
+
+        state.listenerSourceNode.connect(state.listenerGainNode);
+        state.listenerGainNode.connect(state.listenerAnalyser);
+        state.listenerGainNode.connect(state.listenerAudioCtx.destination);
+
+        startCanvasVisualizer('listenerAudioCanvas', state.listenerAnalyser, false);
+      } catch (err) {
+        console.warn('Listener web audio route note:', err);
+      }
+
+      // Autoplay Check
+      const playPromise = audioEl.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          setListenerStatusBadge('live');
+        }).catch(() => {
+          document.getElementById('listenerAutoplayOverlay').classList.remove('hidden');
+          setListenerStatusBadge('tap-required');
+        });
+      }
+
+      // Update Listener UI
+      document.getElementById('listenerConnectBtn').classList.add('hidden');
+      document.getElementById('listenerDisconnectBtn').classList.remove('hidden');
+      document.getElementById('listenerDisconnectBtn').classList.add('flex');
+      document.getElementById('listenerChatInput').disabled = false;
+      document.getElementById('listenerChatSendBtn').disabled = false;
+    }
+
+    function unlockListenerAutoplayAudio() {
+      const audioEl = document.getElementById('remoteAudioSink');
+      if (state.listenerAudioCtx && state.listenerAudioCtx.state === 'suspended') {
+        state.listenerAudioCtx.resume();
+      }
+      audioEl.play().then(() => {
+        document.getElementById('listenerAutoplayOverlay').classList.add('hidden');
+        setListenerStatusBadge('live');
+      }).catch(e => console.error(e));
+    }
+
+    function toggleListenerPlaybackMute() {
+      const audioEl = document.getElementById('remoteAudioSink');
+      const icon = document.getElementById('listenerVolIcon');
+      if (audioEl.muted || audioEl.paused) {
+        audioEl.muted = false;
+        audioEl.play();
+        if (state.listenerAudioCtx) state.listenerAudioCtx.resume();
+        icon.setAttribute('data-lucide', 'volume-2');
+      } else {
+        audioEl.muted = true;
+        icon.setAttribute('data-lucide', 'volume-x');
+      }
+      lucide.createIcons();
+    }
+
+    function adjustListenerVolume(val) {
+      const audioEl = document.getElementById('remoteAudioSink');
+      audioEl.volume = parseFloat(val);
+      if (state.listenerGainNode && state.listenerAudioCtx) {
+        state.listenerGainNode.gain.setValueAtTime(parseFloat(val), state.listenerAudioCtx.currentTime);
+      }
+    }
+
+    function disconnectListenerFromStation() {
+      if (state.listenerCall) {
+        state.listenerCall.close();
+        state.listenerCall = null;
+      }
+      if (state.listenerDataConn) {
+        state.listenerDataConn.close();
+        state.listenerDataConn = null;
+      }
+
+      const audioEl = document.getElementById('remoteAudioSink');
+      audioEl.srcObject = null;
+
+      document.getElementById('listenerConnectBtn').classList.remove('hidden');
+      document.getElementById('listenerConnectBtn').disabled = false;
+      document.getElementById('listenerConnectBtnLabel').textContent = 'Tune In';
+      document.getElementById('listenerDisconnectBtn').classList.add('hidden');
+      document.getElementById('listenerChatInput').disabled = true;
+      document.getElementById('listenerChatSendBtn').disabled = true;
+      setListenerStatusBadge('standby');
+      document.getElementById('listenerStationHeading').textContent = 'Not Connected';
+      document.getElementById('listenerStationSubtext').textContent = 'Connect to a live Room ID above to begin streaming.';
+    }
+
+    function setListenerStatusBadge(status) {
+      const badge = document.getElementById('listenerPillStatus');
+      if (status === 'live') {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono uppercase bg-rose-500/20 text-rose-400 border border-rose-500/40';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500 pulse-ring-active"></span> LIVE';
+      } else if (status === 'connecting' || status === 'tap-required') {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono uppercase bg-amber-500/20 text-amber-400 border border-amber-500/40';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> CONNECTING';
+      } else {
+        badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono uppercase bg-slate-800 text-slate-400 border border-studio-700';
+        badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-500"></span> STANDBY';
+      }
+    }
+
+    function makeSilenceMediaStream() {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const dst = ctx.createMediaStreamDestination();
+      osc.connect(dst);
+      osc.start();
+      dst.stream.getAudioTracks()[0].enabled = false;
+      return dst.stream;
+    }
+
+    function handleSendChatMessage(event, fromRole) {
+      event.preventDefault();
+      const input = fromRole === 'broadcaster' ? document.getElementById('broadcasterChatInput') : document.getElementById('listenerChatInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const sender = fromRole === 'broadcaster' ? 'Host 🎙️' : `Listener-${state.peerId.substring(0, 4)}`;
+
+      if (state.role === 'broadcaster') {
+        appendChatMessage(sender, text, 'broadcaster');
+        broadcastMeshMessage({ type: 'chat', sender, text });
+      } else if (state.listenerDataConn && state.listenerDataConn.open) {
+        appendChatMessage(sender, text, 'listener');
+        state.listenerDataConn.send({ type: 'chat', sender, text });
+      }
+
+      input.value = '';
+    }
+
+    function triggerQuickReaction(emoji) {
+      triggerBurstAnimation(emoji);
+      const sender = state.role === 'broadcaster' ? 'Host' : `Listener-${state.peerId ? state.peerId.substring(0, 4) : 'User'}`;
+      appendChatMessage(sender, `reacted ${emoji}`, state.role, true);
+
+      if (state.role === 'broadcaster') {
+        broadcastMeshMessage({ type: 'reaction', sender, emoji });
+      } else if (state.listenerDataConn && state.listenerDataConn.open) {
+        state.listenerDataConn.send({ type: 'reaction', sender, emoji });
+      }
+    }
+
+    function triggerBurstAnimation(emoji) {
+      confetti({
+        particleCount: 20,
+        spread: 55,
+        origin: { y: 0.8 },
+        scalar: 1.4,
+        shapes: ['circle']
+      });
+    }
+
+    function appendChatMessage(sender, text, contextRole, isReaction = false) {
+      const hostContainer = document.getElementById('hostChatContainer');
+      const listenerContainer = document.getElementById('listenerChatContainer');
+      const target = contextRole === 'broadcaster' ? hostContainer : listenerContainer;
+      if (!target) return;
+
+      const isSelf = sender.includes('Host') ? (state.role === 'broadcaster') : (state.role === 'listener');
+      const msg = document.createElement('div');
+      msg.className = `p-2.5 rounded-xl border text-xs max-w-[88%] ${
+        sender === 'system'
+          ? 'bg-studio-950/80 border-studio-800 text-slate-400 italic text-center w-full mx-auto'
+          : isSelf
+          ? 'ml-auto bg-cyan-950/60 border-cyan-800 text-cyan-100'
+          : 'mr-auto bg-studio-800 border-studio-700 text-slate-200'
+      }`;
+
+      if (sender !== 'system') {
+        const meta = document.createElement('div');
+        meta.className = 'text-[10px] font-mono font-bold text-slate-400 mb-0.5 flex items-center justify-between gap-2';
+        meta.innerHTML = `<span>${sender}</span> <span>${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`;
+        msg.appendChild(meta);
+      }
+
+      const body = document.createElement('div');
+      body.className = isReaction ? 'text-lg' : 'break-words';
+      body.textContent = text;
+      msg.appendChild(body);
+
+      target.appendChild(msg);
+      target.scrollTop = target.scrollHeight;
+    }
+
+    function switchRole(role) {
+      state.role = role;
+      const bContainer = document.getElementById('broadcasterContainer');
+      const lContainer = document.getElementById('listenerContainer');
+      const tabB = document.getElementById('tabBroadcasterBtn');
+      const tabL = document.getElementById('tabListenerBtn');
+
+      if (role === 'broadcaster') {
+        bContainer.classList.remove('hidden');
+        bContainer.classList.add('grid');
+        lContainer.classList.add('hidden');
+        lContainer.classList.remove('grid');
+
+        tabB.className = 'flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition bg-studio-700 text-white shadow-md';
+        tabL.className = 'flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition text-slate-400 hover:text-slate-200';
+      } else {
+        bContainer.classList.add('hidden');
+        bContainer.classList.remove('grid');
+        lContainer.classList.remove('hidden');
+        lContainer.classList.add('grid');
+
+        tabL.className = 'flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition bg-studio-700 text-white shadow-md';
+        tabB.className = 'flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition text-slate-400 hover:text-slate-200';
+      }
+
+      initPeerMesh();
+    }
+
+    function copyStationInviteLink() {
+      const baseUrl = window.location.origin + window.location.pathname;
+      const url = `${baseUrl}?room=${state.staticRoomId}#listener`;
+
+      // execCommand fallback for cross-iframe compatibility
+      const tempInput = document.createElement('input');
+      tempInput.value = url;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+
+      appendChatMessage('system', `Permanent station link copied: ${url}`, state.role);
+    }
+
+    function checkUrlRouting() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isRoomSet = urlParams.get('room');
+      const isListenerHash = window.location.hash === '#listener';
+
+      if (isListenerHash || (isRoomSet && !window.location.hash.includes('broadcaster'))) {
+        switchRole('listener');
+        setTimeout(() => {
+          connectListenerToStation();
+        }, 600);
+      }
+    }
+
+    function updatePeerStatusBadge(status, text) {
+      const dot = document.getElementById('peerDot');
+      const label = document.getElementById('peerStatusLabel');
+      if (label) label.textContent = text;
+
+      if (status === 'online') {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+      } else if (status === 'connecting') {
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-rose-500';
+      }
+    }
+
+    function toggleQuickHelp(show) {
+      const modal = document.getElementById('helpModal');
+      if (show) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      } else {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    }
+  </script>
+</body>
+</html>
+```
